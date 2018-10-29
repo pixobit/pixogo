@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html>
+<head>
+	<title>Pixogo Example</title>
+</head>
+<body>
+<style>
+	* {
+		text-align: center;
+	}
+	.link-active {
+		color: orange;
+	}
+	.page-enter-active,
+	.page-leave-active {
+		-webkit-transition-property: opacity;
+		transition-property: opacity;
+		-webkit-transition-duration: .1s;
+		transition-duration: .1s
+	}
+	
+	.page-enter-active {
+		-webkit-transition-delay: .1s;
+		transition-delay: .1s
+	}
+	
+	.page-leave-active {
+		opacity: 0
+	}
+</style>
+<h1>Pixogo Navigation Example</h1>
+<nav>
+<a href="page1.html">Page1</a>
+<a href="page2.html">Page2</a>
+<a href="page3.html">Page3</a>
+</nav>
+<div id="mainContent"></div>
+<script src="pixogo.js"></script>
+<script>
+	new Pixogo('mainContent', {
+		'page1': {controller: function(){
+			//do something after page load
+		},
+		'page2': {controller: function(){
+			//do something after page load
+		},
+    }
+});
+</script>
+</body>
+</html>
