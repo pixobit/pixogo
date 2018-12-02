@@ -34,26 +34,30 @@ function Pixogo(contentId, routes, options) {
     this._genericHooks = null;
     this._historyAPIUpdateMethod = 'pushState';
     this._contentEl = document.getElementById(contentId);
+    this._navigateOnTransition = (this._cssRuleIsDefined('.page-enter-active') || this._cssRuleIsDefined('.page-leave-active'));
+    this.transitionTimeout = null;
     
     //Extend defaults
     this.settings = this._extend({
-        googleAnalyticsID: null
+        googleAnalyticsID: null,
+        autoScrollToTop: true
     }, options);
     
     //Execute js on serverload
     var routeObj = this._getCurrentRoute(location.pathname);
     if(routeObj !== undefined) { //Yayy, we've found a route
-        routeObj.route.controller(routeObj.params);
+        routeObj.route.onLoad(routeObj.params);
     }
     
     this._contentEl.addEventListener('transitionend', function(){
         if(this.classList.contains('page-leave-active')) { 
             this.classList.remove('page-leave-active');
             _this.navigate(window.location.pathname);
-            window.scrollTo(0, 0); //Scroll to top on page change
+            if(_this.settings.autoScrollToTop) { window.scrollTo(0, 0); } //Scroll to top on page change
             this.classList.add('page-enter-active');
         } else {
             this.classList.remove('page-enter-active');
+            clearTimeout(_this.transitionTimeout);
         }
     });
     
@@ -61,7 +65,7 @@ function Pixogo(contentId, routes, options) {
 
     window.addEventListener('popstate', function (e) {
         _this._setLinkAsActive(this.location.pathname);
-        _this.navigate(this.location.pathname);
+        _this._navigateWithoutTransition(this.location.pathname);
     });
     
     this._init();
@@ -87,24 +91,52 @@ Pixogo.prototype = {
         //Convert page urls to pixogo navigation
         this._convertUrls();
     },
-    _findLinks: function() {
-        return [].slice.call(document.querySelectorAll('a:not([target="_blank"])'));
+    _cssRuleIsDefined: function(className) {
+	for(var i = 0; i < document.styleSheets.length; ++i) {
+            var classes = null;
+            try {
+                classes = document.styleSheets[i].rules || document.styleSheets[i].cssRules;
+            } catch(e) { continue; }
+
+            for (var x = 0; x < classes.length; x++) {
+                if (classes[x].selectorText == className) {
+                    return true;
+                }
+            }
+	}
+        return false;
+    },
+    _findLinks: function(container) {
+        container = (!container ? document : container);
+        return [].slice.call(container.querySelectorAll('a:not([target="_blank"])'));
+    },
+    _navigateWithoutTransition: function(path) {
+        this._contentEl.classList.remove('page-leave-active');
+        this._contentEl.classList.remove('page-enter-active');
+        this.navigate(path);
+        if(this.settings.autoScrollToTop) { window.scrollTo(0, 0); } //Scroll to top on page change
+        clearTimeout(this.transitionTimeout);
     },
     navigate: function(path) {
         var routeObj = this._getCurrentRoute(path);
-
+        var _this = this;
         // Do we have both a view and a route?
         if (this._contentEl) {
+            var fillRequest = function() {
+                _this._contentEl.innerHTML = _this._cache[path];
+                _this._onLoad(path);
+                if(routeObj && routeObj.route && routeObj.route.onLoad) {
+                    routeObj.route.onLoad(routeObj.params); //Execute onloaded function
+                }
+                _this._convertUrls(_this._findLinks(_this._contentEl));
+            };
+			
             if(!this._cache[path]) {
-                this._cache[path] = this._getPage(path);
+                this._cache[path] = this._getPage(path, fillRequest);
+            } else {
+                fillRequest();
             }
-            this._contentEl.innerHTML = this._cache[path];
-            this._onLoad(path);
-            //pages[route.templateId];
-            if(routeObj && routeObj.route && routeObj.route.controller) {
-                routeObj.route.controller(routeObj.params); //Execute onloaded function
-            }
-            this._convertUrls(this._contentEl.querySelectorAll('a:not([target="_blank"])'));
+			
             return true; //Prevent default page reload
         }
         return false;
@@ -116,17 +148,15 @@ Pixogo.prototype = {
             ga('send', 'pageview');
         }
     },
-    _getPage: function(path) {
+    _getPage: function(path, onRespCallback) {
+        var _this = this;
         const Http = new XMLHttpRequest();
-        Http.open("POST", path, false);
+        Http.open("POST", path);
         Http.setRequestHeader('Content-type', 'application/x-www-form-urlencoded');
         Http.send('contentOnly=1');
-        if (Http.status === 200) {
-            return Http.responseText;
-        }
-
         Http.onreadystatechange = function(e) {
-            console.log(Http.responseText);
+            _this._cache[path] = Http.responseText;
+            onRespCallback();
         };
     },
     _getCurrentRoute: function(path) {
@@ -157,14 +187,24 @@ Pixogo.prototype = {
     },
     _convertUrls: function(links) {
         var _this = this;
-        (links == undefined ? this._findLinks() : links).forEach(function (link) {
+        (links === undefined ? this._findLinks() : links).forEach(function (link) {
         if (!link.hasListenerAttached) {
             link.addEventListener('click', function (e) {
                 var location = this.getAttribute('href');
                 //Handle page transition
                 _this._contentEl.classList.add('page-leave-active');
+                
+                //Error handling, for if transition definition was detected, but not fired
+                _this.transitionTimeout = setTimeout(function(){
+                    console.log('Transition Timed Out: Pixogo detected transition definition, but no working transition. Please make sure the transition is working.');
+                }, 10000);
+                
                 history.pushState('', this.title, location);
                 _this._setLinkAsActive(location);
+                //If for some reason it gets stuck, or if transition is disabled
+                if((_this._contentEl.classList.contains('page-enter-active') && _this._contentEl.classList.contains('page-leave-active')) || _this._navigateOnTransition === false) { //If there's no page transition
+                    _this._navigateWithoutTransition(location);
+                }
                 e.preventDefault();
                 return false;
             });
